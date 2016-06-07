@@ -20,6 +20,18 @@ For = namedtuple("For", "target, iter, body")
 While = namedtuple("While", "test, body")
 
 
+class ParseError(Exception):
+    def __init__(self, node, lineno, msg):
+        self.node = node
+        self.lineno = lineno
+        msg = "(node: {}, lineno: {}) {}".format(node.__class__.__name__, lineno, msg)
+        super().__init__(msg)
+
+
+def parse_error(node, msg):
+    raise ParseError(node, node.lineno, msg)
+
+
 class V(ast.NodeVisitor):
     def __init__(self):
         self.s = []
@@ -88,7 +100,7 @@ class V(ast.NodeVisitor):
     def visit_Compare(self, node):
         # left, ops, comparators
         if len(node.ops) > 1:
-            raise NotImplementedError("x < y < z is not supported")
+            parse_error(node, "x < y < z is not supported")
         self.visit(node.left)
         self.visit(node.comparators[0])
         name = node.ops[0].__class__.__name__
@@ -101,7 +113,7 @@ class V(ast.NodeVisitor):
         self.visit(node.value)
         for name in reversed(node.targets):
             if isinstance(name, ast.Tuple):
-                raise NotImplementedError("destructuring is not supported")
+                parse_error(node, "destructuring is not supported")
             self.s.append(Assign(name=name.id, value=self.s.pop()))
 
     def visit_AugAssign(self, node):
@@ -134,12 +146,16 @@ class V(ast.NodeVisitor):
 
     def visit_For(self, node):
         # target, iter, body
-        self.generic_visit(node)
+        if node.orelse:
+            parse_error(node, "for-else is not supprted")
+        self.visit(node.target)
         body = list(reversed([self.s.pop() for _ in node.body]))
         self.s.append(For(body=body, iter=self.s.pop(), target=self.s.pop()))
 
     def visit_While(self, node):
         # test, body
+        if node.orelse:
+            parse_error(node, "while-else is not supprted")
         self.generic_visit(node)
         body = list(reversed([self.s.pop() for _ in node.body]))
         self.s.append(While(body=body, test=self.s.pop()))
