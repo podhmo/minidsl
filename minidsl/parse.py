@@ -18,6 +18,7 @@ Call = namedtuple("Call", "ref, args, kwargs")
 If = namedtuple("If", "test, body, orelse")
 For = namedtuple("For", "target, iter, body")
 While = namedtuple("While", "test, body")
+FunctionDef = namedtuple("FunctionDef", "name, args, kwargs")
 
 
 class ParseError(Exception):
@@ -124,11 +125,26 @@ class V(ast.NodeVisitor):
         value = Op(name=op_name, args=[Ref(name=node.target.id), self.s.pop()])
         self.s.append(Assign(name=node.target.id, value=value))
 
+    def visit_FunctionDef(self, node):
+        # name, args, body
+        if node.args.vararg:
+            parse_error(node, "*args is not supported, when function definiton")
+        if node.args.kwarg:
+            parse_error(node, "**kwargs is not supported, when function definiton")
+        if node.args.defaults:
+            parse_error(node, "keyword arguments is not supported, when function definiton")
+        # arguments(args=[arg(arg='x', annotation=None), arg(arg='y', annotation=None)], vararg=arg(arg='args', annotation=None), kwonlyargs=[], kw_defaults=[], kwarg=arg(arg='kwargs', annotation=None), defaults=[Num(n=0)])
+        pass
+
     def visit_Call(self, node):
         # func, args, keywords, starargs, kwargs
         self.generic_visit(node)
         kwargs = list(reversed([self.s.pop() for _ in node.keywords]))
         args = list(reversed([self.s.pop() for _ in node.args]))
+        if node.starargs:
+            parse_error(node, "*args is not supprted")
+        if node.kwargs:
+            parse_error(node, "**kwargs is not supprted")
         ref = self.s.pop()
         self.s.append(Call(kwargs=kwargs, args=args, ref=ref))
 
@@ -144,18 +160,22 @@ class V(ast.NodeVisitor):
         body = list(reversed([self.s.pop() for _ in node.body]))
         self.s.append(If(orelse=orelse, body=body, test=self.s.pop()))
 
+    def visit_IfExp(self, node):
+        # test, body, orelse
+        parse_error(node, "<x> if <test> else <y> is not supported")
+
     def visit_For(self, node):
         # target, iter, body
         if node.orelse:
-            parse_error(node, "for-else is not supprted")
-        self.visit(node.target)
+            parse_error(node, "for-else is not supported")
+        self.generic_visit(node)
         body = list(reversed([self.s.pop() for _ in node.body]))
         self.s.append(For(body=body, iter=self.s.pop(), target=self.s.pop()))
 
     def visit_While(self, node):
         # test, body
         if node.orelse:
-            parse_error(node, "while-else is not supprted")
+            parse_error(node, "while-else is not supported")
         self.generic_visit(node)
         body = list(reversed([self.s.pop() for _ in node.body]))
         self.s.append(While(body=body, test=self.s.pop()))
@@ -174,4 +194,10 @@ def run(code):
     print(V().parse(t))
 
 if __name__ == "__main__":
-    pass
+    run("""
+def f(x):
+    if x == 0:
+       return 1
+    else:
+       return x * f(x - 1)
+""")
